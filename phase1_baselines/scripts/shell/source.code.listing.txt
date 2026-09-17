@@ -1,0 +1,80 @@
+     1	#include <iostream>
+     2	#include <vector>
+     3	#include <cmath>
+     4	#include <chrono>
+     5	#include <iomanip>
+     6	#include <string>
+     7	#include <sstream>
+     8	#include <algorithm>
+     9	#include <random>
+    10	#include <omp.h>
+    11	#include <sys/stat.h>
+    12	
+    13	#ifndef NO_OPENCV
+    14	#include <opencv2/opencv.hpp>
+    15	#endif
+    16	
+    17	// ============================================================================
+    18	// Core function from convolve.cpp - Fast Laser Speckle Contrast calculation
+    19	// ============================================================================
+    20	extern "C" {
+    21	float fastSpeckle(float* input_data, int rows, int cols, int kernel_size)
+    22	{
+    23		const int pad = (kernel_size - 1) / 2;
+    24		
+    25		// Precalculation of reciprocals for faster processing
+    26		const float recip_2 = 1.0f / (kernel_size * (kernel_size - 1));
+    27		const float recip_3 = 1.0f / kernel_size;
+    28	
+    29		// Accumulators
+    30		double total = 0.0;
+    31		double count = 0.0;
+    32	
+    33		const int stride = cols + 1;  // diagonal step (one down, one right)
+    34	
+    35		#pragma omp parallel for reduction(+:total,count) schedule(static)
+    36		for (int y = 0; y < rows; ++y) {
+    37			for (int x = 0; x < cols; ++x) {
+    38	
+    39				// Determine start of the diagonal segment
+    40				int start_y = y - pad;
+    41				int start_x = x - pad;
+    42				int end_y   = y + pad;
+    43				int end_x   = x + pad;
+    44	
+    45				// Clamp to borders once
+    46				if (start_y < 0) start_y = 0;
+    47				if (start_x < 0) start_x = 0;
+    48				if (end_y >= rows) end_y = rows - 1;
+    49				if (end_x >= cols) end_x = cols - 1;
+    50	
+    51				// Compute effective length 
+    52				int len = end_y - start_y + 1;
+    53				
+    54				float* ptr = input_data + start_y * cols + start_x;
+    55	
+    56				float acc = 0.0f;
+    57				float acc_sq = 0.0f;
+    58	
+    59				// main diagonal accumulation
+    60				for (int k = 0; k < len; ++k, ptr += stride) {
+    61					float v = *ptr;
+    62					acc += v;
+    63					acc_sq += v * v;
+    64				}
+    65	
+    66				float denom = acc * recip_3;
+    67				if (denom != 0.0f) {
+    68					float val = sqrtf((len * acc_sq - acc * acc) * recip_2) / denom;
+    69					if (std::isfinite(val)) {
+    70						total += val;
+    71						count += 1.0;
+    72					}
+    73				}
+    74			}
+    75		}
+    76	
+    77		return (count == 0.0) ? NAN : (float)(total / count);
+    78	}
+    79	}
+
