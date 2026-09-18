@@ -16,7 +16,8 @@ import subprocess
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
-from matplotlib.patches import Rectangle
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch, Rectangle
 import numpy as np
 import pandas as pd
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401  (registers the 3D projection)
@@ -237,6 +238,16 @@ def find_clinical_failures(analysis_df: pd.DataFrame) -> pd.DataFrame:
     return analysis_df.loc[failing_mask, columns]
 
 
+def _status_legend_handles(marker="o"):
+    """Proxy legend entries explaining the green/red PASS/FAIL marker or border coloring."""
+    return [
+        Line2D([0], [0], marker=marker, linestyle="none", markerfacecolor=STATUS_GOOD,
+               markeredgecolor=INK_PRIMARY, markersize=8, label="PASS"),
+        Line2D([0], [0], marker=marker, linestyle="none", markerfacecolor=STATUS_CRITICAL,
+               markeredgecolor=INK_PRIMARY, markersize=8, label="FAIL"),
+    ]
+
+
 def _style_axes(ax):
     ax.set_facecolor(CHART_SURFACE)
     ax.tick_params(colors=INK_MUTED)
@@ -274,6 +285,10 @@ def plot_analysis_3d(analysis_df: pd.DataFrame, metric: dict, filename: str, tit
     colorbar.set_label(metric["label"], color=INK_PRIMARY)
     colorbar.ax.yaxis.set_tick_params(color=INK_MUTED)
     plt.setp(colorbar.ax.get_yticklabels(), color=INK_MUTED)
+
+    legend = ax.legend(handles=_status_legend_handles(), title="Marker edge = clinical target",
+                        loc="upper left", fontsize=8, framealpha=0.9)
+    legend.get_title().set_fontsize(8)
 
     fig.savefig(PLOTS_DIR / filename, dpi=150, facecolor=CHART_SURFACE)
     plt.close(fig)
@@ -315,9 +330,11 @@ def plot_metric_facets(analysis_df: pd.DataFrame, metric: dict, filename: str) -
 
         for (row, col), value in np.ndenumerate(pivot.values):
             ax.text(col, row, f"{value:.1f}", ha="center", va="center", fontsize=7, color=INK_PRIMARY)
-            if status_pivot.values[row, col] == "FAIL":
+            status = status_pivot.values[row, col]
+            border_color = STATUS_GOOD if status == "PASS" else STATUS_CRITICAL if status == "FAIL" else None
+            if border_color:
                 ax.add_patch(Rectangle(
-                    (col - 0.5, row - 0.5), 1, 1, fill=False, edgecolor=STATUS_CRITICAL, linewidth=2,
+                    (col - 0.5, row - 0.5), 1, 1, fill=False, edgecolor=border_color, linewidth=2,
                 ))
         _style_axes(ax)
 
@@ -330,7 +347,13 @@ def plot_metric_facets(analysis_df: pd.DataFrame, metric: dict, filename: str) -
         colorbar.ax.yaxis.set_tick_params(color=INK_MUTED)
         plt.setp(colorbar.ax.get_yticklabels(), color=INK_MUTED)
 
-    fig.suptitle(f"{metric['label']} — faceted by kernel size (red border = FAIL)", color=INK_PRIMARY)
+    fig.suptitle(f"{metric['label']} — faceted by kernel size", color=INK_PRIMARY)
+    legend_handles = [
+        Patch(facecolor="none", edgecolor=STATUS_GOOD, linewidth=2, label="PASS"),
+        Patch(facecolor="none", edgecolor=STATUS_CRITICAL, linewidth=2, label="FAIL"),
+    ]
+    fig.legend(handles=legend_handles, title="Cell border = clinical target",
+               loc="upper right", fontsize=8, framealpha=0.9)
     fig.savefig(PLOTS_DIR / filename, dpi=150, facecolor=CHART_SURFACE)
     plt.close(fig)
 
@@ -380,7 +403,8 @@ def plot_ofat_metric(df: pd.DataFrame, x_col: str, metric: dict, title: str, fil
     ax.set_title(title)
     ax.grid(True, color=GRIDLINE, linewidth=1)
     ax.set_axisbelow(True)
-    ax.legend(loc="best", fontsize=8, framealpha=0.9)
+    handles, _ = ax.get_legend_handles_labels()
+    ax.legend(handles=handles + _status_legend_handles(), loc="best", fontsize=8, framealpha=0.9)
     _style_axes(ax)
     fig.tight_layout()
     fig.savefig(PLOTS_DIR / filename, dpi=150, facecolor=CHART_SURFACE)
